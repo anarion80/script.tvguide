@@ -957,7 +957,11 @@ def parseXMLTV(context, f, size, logoFolder, progress_callback):
                     icon = iconElement.get("src")
                 if not description:
                     description = strings(NO_DESCRIPTION)
-                result = Program(channel, elem.findtext('title'), parseXMLTVDate(elem.get('start')), parseXMLTVDate(elem.get('stop')), description, imageSmall=icon)
+                title = elem.findtext('title')
+		subtitle = elem.findtext('sub-title')
+		if subtitle:
+			title += ": " + elem.findtext('sub-title')
+                result = Program(channel, title, parseXMLTVDate(elem.get('start')), parseXMLTVDate(elem.get('stop')), description, imageSmall=icon)
 
             elif elem.tag == "channel":
                 id = elem.get("id")
