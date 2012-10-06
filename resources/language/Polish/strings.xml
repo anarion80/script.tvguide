@@ -70,5 +70,7 @@
     <string id="30802">TV Guide jest skonfigurowany aby używać dodatku Weeb.Tv</string>
     <string id="30803">który nie jest zainstalowany.</string>
     <string id="30804">Odtwarzanie za pomocą tego dodatku zostało wyłączone.</string>
+	
+	<string id="30900">Adres URL pliku XMLTV</string>
 </strings>
 

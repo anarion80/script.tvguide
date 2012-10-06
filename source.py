@@ -18,7 +18,7 @@
 #  http://www.gnu.org/copyleft/gpl.html
 #
 import StringIO
-import os
+import os, sys
 import simplejson
 import datetime
 import threading
@@ -26,12 +26,15 @@ import time
 import urllib2
 from xml.etree import ElementTree
 from strings import *
+from HTMLParser import HTMLParser
 import ysapi
 import buggalo
 import xbmc
 import xbmcgui
 import xbmcvfs
 from sqlite3 import dbapi2 as sqlite3
+import tarfile
+import zipfile
 
 STREAM_DR1 = 'plugin://plugin.video.dr.dk.live/?playChannel=1'
 STREAM_DR2 = 'plugin://plugin.video.dr.dk.live/?playChannel=2'
@@ -42,7 +45,7 @@ STREAM_DR_HD = 'plugin://plugin.video.dr.dk.live/?playChannel=6'
 STREAM_KANAL_SPORT = 'plugin://plugin.video.dr.dk.live/?playChannel=203'
 
 SETTINGS_TO_CHECK = ['source', 'youseetv.category', 'youseewebtv.playback', 'danishlivetv.playback', 'xmltv.file',
-                     'xmltv.logo.folder', 'ontv.url', 'json.url']
+                     'xmltv.logo.folder', 'ontv.url', 'json.url','xmltv.url']
 
 class Channel(object):
     def __init__(self, id, title, logo = None, streamUrl = None, visible = True, weight = -1):
@@ -100,6 +103,22 @@ class SourceNotConfiguredException(SourceException):
 
 class DatabaseSchemaException(sqlite3.DatabaseError):
     pass
+    
+class MyHTMLParser(HTMLParser):
+
+    def __init__(self, fh):
+        """
+        {fh} must be an input stream returned by open() or urllib2.urlopen()
+        """
+        HTMLParser.__init__(self)
+        self.link = ""
+        self.feed(fh.read())
+    def handle_starttag(self, tag, attrs):
+        if tag == 'a':
+            if attrs[0][0] == 'href':
+                self.link = attrs[0][1]
+    def get_fileids(self):
+        return self.link
 
 class Source(object):
     KEY = "undefined"
@@ -772,6 +791,139 @@ class XMLTVSource(Source):
     def _isProgramListCacheExpired(self, startTime):
         return self._isChannelListCacheExpired()
 
+class XMLTVWEBSource(Source):
+    KEY = 'xmltv-url'
+
+    def __init__(self, addon, cachePath):
+        
+        def extract_file(path):
+            if path.endswith('.zip'):
+                opener, mode = zipfile.ZipFile, 'r'
+            elif path.endswith('.tar.gz') or path.endswith('.tgz'):
+                opener, mode = tarfile.open, 'r:gz'
+            elif path.endswith('.tar.bz2') or path.endswith('.tbz'):
+                opener, mode = tarfile.open, 'r:bz2'
+            else: 
+                raise ValueError, "Could not extract `%s` as no appropriate extractor is found" % path
+            xbmc.log('[script.tvguide] opener: ' + str(opener), xbmc.LOGDEBUG)
+            cwd = os.getcwd()
+            os.chdir(self.cachePath)
+           
+            try:
+                file = opener(path, mode)
+                try: file.extractall()
+                except Exception as ex:
+                    raise SourceException('Exception! ' + str(ex))
+                finally: file.close()
+            except Exception as ex:
+                raise SourceException('Exception! ' + str(ex))
+            finally:
+                os.chdir(cwd)
+        
+        
+        
+        xbmc.log('[script.tvguide] Entering Init', xbmc.LOGDEBUG)        
+        super(XMLTVWEBSource, self).__init__(addon, cachePath)
+        self.logoFolder = addon.getSetting('xmltv.logo.folder')
+        self.xmlTvFileLastChecked = datetime.datetime.fromtimestamp(0)
+        self.HTMLURL = addon.getSetting('xmltv.url')
+
+        if not addon.getSetting('xmltv.url'):
+            raise SourceNotConfiguredException()
+        
+        self.xmlTvFile = os.path.join(self.cachePath, '%s.xmltv' % self.KEY) 
+        self.xmltvguide = os.path.join(self.cachePath, "guide.xml")   
+        tempFile = os.path.join(self.cachePath, '%s.xmltv.tmp' % self.KEY)
+        
+        
+        if (os.path.exists(self.xmltvguide) and ((datetime.datetime.fromtimestamp(os.path.getmtime(self.xmltvguide)) - datetime.datetime.now()).days > 1)) or not os.path.exists(self.xmltvguide):
+        # if downloaded xmltv file is older than 1 day or is not present then download it
+            
+            xbmc.log('[script.tvguide] Obtaining new XMLTV file from URL', xbmc.LOGDEBUG)
+            opener = urllib2.build_opener(urllib2.HTTPHandler(debuglevel=1))
+            opener.addheaders = [('User-agent', 'Mozilla/5.0')]
+            response = opener.open(self.HTMLURL)
+            myparser = MyHTMLParser(response)
+            xbmc.log('[script.tvguide] Parsing XMLTV location webpage...')
+            self.XMLTVURL = myparser.link
+            xbmc.log('[script.tvguide] XMLTV new URL:' + self.XMLTVURL, xbmc.LOGDEBUG)
+            self.downloadedTarName = self.XMLTVURL.split('/')[-1]
+            downloadedTarPath = os.path.join(self.cachePath, self.downloadedTarName)
+            
+            try:
+                r = urllib2.Request(self.XMLTVURL)
+                f = urllib2.urlopen(r)
+                xbmc.log('[script.tvguide] Downloading: ' + self.XMLTVURL, xbmc.LOGDEBUG)
+                xbmc.log('[script.tvguide] downloadedTarName: ' + self.downloadedTarName, xbmc.LOGDEBUG)
+                xbmc.log('[script.tvguide] downloadedTarPath: ' + downloadedTarPath, xbmc.LOGDEBUG)
+                local_file = open(downloadedTarPath, "wb")
+                xbmc.log('[script.tvguide] local_file: ' + str(local_file), xbmc.LOGDEBUG)
+                xbmc.log('[script.tvguide] Writing: ' + downloadedTarPath, xbmc.LOGDEBUG)
+                local_file.write(f.read())
+                local_file.close()    
+                f.close()
+
+            except urllib2.URLError, e:
+                raise SourceException('Failed to fetch file: ' + str(e))
+            except IOError as e:
+                raise SourceException("I/O error({0}): {1}" + str(e.errno) + str(e.strerror))
+            except Exception as ex:
+                raise SourceException('Problem downloading file!)' + str (ex))
+
+            extract_file(downloadedTarPath)
+            xbmc.log('[script.tvguide] xmltvfile: ' + self.xmltvguide, xbmc.LOGDEBUG)
+            if not os.path.exists(self.xmltvguide):
+                raise SourceException('XML TV file from TAR does not exist!')
+                
+            xbmcvfs.copy(self.xmltvguide, self.xmlTvFile)    
+            xbmc.log('[script.tvguide] Caching XMLTV file...')
+            xbmcvfs.copy(self.xmlTvFile, tempFile)
+
+        if not os.path.exists(tempFile):
+            raise SourceException('XML TV file was not cached, does it exist?')
+
+        # if xmlTvFile doesn't exists or the file size is different from tempFile
+        # we copy the tempFile to xmlTvFile which in turn triggers a reload in self._isChannelListCacheExpired(..)
+        if not os.path.exists(self.xmlTvFile) or os.path.getsize(self.xmlTvFile) != os.path.getsize(tempFile):
+            if os.path.exists(self.xmlTvFile):
+                os.unlink(self.xmlTvFile)
+            os.rename(tempFile, self.xmlTvFile)
+
+    
+            
+    def getDataFromExternal(self, date, progress_callback = None):
+        size = os.path.getsize(self.xmlTvFile)
+        f = open(self.xmlTvFile, "rb")
+        context = ElementTree.iterparse(f, events=("start", "end"))
+        return parseXMLTV(context, f, size, self.logoFolder, progress_callback)
+
+    def _isChannelListCacheExpired(self):
+        """
+        Check if xmlTvFile was modified, otherwise cache is not expired.
+        Only check filesystem once every 5 minutes
+        """
+        delta = datetime.datetime.now() - self.xmlTvFileLastChecked
+        if delta.seconds < 300:
+            return False
+
+        try:
+            c = self.conn.cursor()
+            c.execute('SELECT channels_updated FROM sources WHERE id=?', [self.KEY])
+            row = c.fetchone()
+            if not row:
+                return True
+            lastUpdated = row['channels_updated']
+            c.close()
+        except TypeError:
+            return True
+
+        fileModified = datetime.datetime.fromtimestamp(os.path.getmtime(self.xmlTvFile))
+        return fileModified > lastUpdated
+
+    def _isProgramListCacheExpired(self, startTime):
+        return self._isChannelListCacheExpired()
+        
+        
 class ONTVSource(Source):
     KEY = 'ontv'
 
@@ -937,7 +1089,8 @@ def instantiateSource(addon):
         'TVTID.dk' : TvTidSource,
         'XMLTV' : XMLTVSource,
         'ONTV.dk' : ONTVSource,
-        'JSON-URL' : JSONSource
+        'JSON-URL' : JSONSource,
+        'XMLTV-URL' : XMLTVWEBSource
     }
 
     cachePath = xbmc.translatePath(ADDON.getAddonInfo('profile'))
