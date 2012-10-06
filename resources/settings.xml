@@ -19,7 +19,7 @@
 		
 		<setting id="xmltv.url" label="30900" type="text" visible="eq(-8,6)" default="http://yaepgp.googlecode.com/git/latest_epg.html"/>
         <setting id="danishlivetv.playback" label="30113" type="bool" default="true" visible="!eq(-9,5) + !eq(-9,6)" enable="System.HasAddon(plugin.video.dr.dk.live) + eq(-6,false)" />
-        <setting id="weebtv.playback" label="30801" type="bool" default="true" visible="eq(-10,5)" enable="System.HasAddon(plugin.video.weeb.tv)" />
+        <setting id="weebtv.playback" label="30801" type="bool" default="true" visible="eq(-10,5) + eq(-10,6)" enable="System.HasAddon(plugin.video.weeb.tv)" />
 		
 	</category>
 
