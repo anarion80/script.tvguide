@@ -14,7 +14,7 @@
         <setting id="ontv.url" label="30117" type="text" visible="eq(-5,2)" default="http://ontv.dk/xmltv/c81e728d9d4c2f636f067f89cc14862c"/>
 		<setting id="json.url" label="30800" type="text" visible="eq(-6,4)" default="http://pvr.ne0.pl/xbmc/tvg-source.php"/>
 		<setting id="xmltv.url" label="30900" type="text" visible="eq(-7,5)" default="http://yaepgp.googlecode.com/git/latest_epg.html"/>
-		<setting id="xmltv.type" label="30901" type="labelenum" visible="eq(-8,5)" default="XMLTV" values="HTML|TARGZ|XMLTV"/>
+		<setting id="xmltv.type" label="30901" type="labelenum" visible="eq(-8,5)" default="HTML" values="HTML|TARGZ|XMLTV"/>
         <setting id="weebtv.playback" label="30801" type="bool" default="true" visible="gt(-9,2)" enable="System.HasAddon(plugin.video.weeb.tv)" />
 	</category>
 
