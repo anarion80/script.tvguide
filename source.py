@@ -641,9 +641,9 @@ class XMLTVSource(Source):
         super(XMLTVSource, self).__init__(addon, cachePath)
         self.logoFolder = addon.getSetting('xmltv.logo.folder')
         self.xmlTvFileLastChecked = datetime.datetime.fromtimestamp(0)
-        self.xmltvFile = addon.getSetting('xmltv.file')
+        self.xmlTvFile = addon.getSetting('xmltv.file')
 
-        if not self.xmltvFile or not xbmcvfs.exists(self.xmltvFile):
+        if not self.xmlTvFile or not xbmcvfs.exists(self.xmlTvFile):
             raise SourceNotConfiguredException()
 
         tempFile = os.path.join(self.cachePath, '%s.xmltv.tmp' % self.KEY)
