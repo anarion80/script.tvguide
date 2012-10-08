@@ -28,6 +28,8 @@
     <string id="30115">- wyczyść najpierw cache</string>
     <string id="30116">Wyszukaj obrazki kanałów w</string>
     <string id="30117">ONTV Pro URL</string>
+	<string id="30118">Włącz menu OSD</string>
+    <string id="30119">Wyłączenie menu OSD może pomóc na szarpane odtwarzanie video.</string>
 
     <string id="30150">Oops, coś poszło nie tak!</string>
     <string id="30151">Ładowanie danych o programie nie powiodło się,</string>
@@ -70,5 +72,7 @@
     <string id="30802">TV Guide jest skonfigurowany aby używać dodatku Weeb.Tv</string>
     <string id="30803">który nie jest zainstalowany.</string>
     <string id="30804">Odtwarzanie za pomocą tego dodatku zostało wyłączone.</string>
+	
+	<string id="30900">Adres URL pliku XMLTV</string>
 </strings>
 
