@@ -645,20 +645,27 @@ class XMLTVSource(Source):
 
         if not self.xmlTvFile or not xbmcvfs.exists(self.xmlTvFile):
             raise SourceNotConfiguredException()
-
-        tempFile = os.path.join(self.cachePath, '%s.xmltv.tmp' % self.KEY)
-        xbmc.log('[script.tvguide] Caching XMLTV file...')
-        xbmcvfs.copy(addon.getSetting('xmltv.file'), tempFile)
-
-        if not os.path.exists(tempFile):
-            raise SourceException('XML TV file was not cached, does it exist?')
-
-        # if xmlTvFile doesn't exists or the file size is different from tempFile
-        # we copy the tempFile to xmlTvFile which in turn triggers a reload in self._isChannelListCacheExpired(..)
-        if not os.path.exists(self.xmlTvFile) or os.path.getsize(self.xmlTvFile) != os.path.getsize(tempFile):
-            if os.path.exists(self.xmlTvFile):
-                os.unlink(self.xmlTvFile)
-            os.rename(tempFile, self.xmlTvFile)
+        
+        try:
+            #xbmcvfs.File() was added in Frodo
+            f = xbmcvfs.File(self.xmltvFile)
+            f.close()
+        except Exception:
+            # fallback for Eden
+            self.xmlTvFile = os.path.join(self.cachePath, '%s.xmltv' % self.KEY)    
+            tempFile = os.path.join(self.cachePath, '%s.xmltv.tmp' % self.KEY)
+            xbmc.log('[script.tvguide] Caching XMLTV file...')
+            xbmcvfs.copy(addon.getSetting('xmltv.file'), tempFile)
+    
+            if not os.path.exists(tempFile):
+                raise SourceException('XML TV file was not cached, does it exist?')
+    
+            # if xmlTvFile doesn't exists or the file size is different from tempFile
+            # we copy the tempFile to xmlTvFile which in turn triggers a reload in self._isChannelListCacheExpired(..)
+            if not os.path.exists(self.xmlTvFile) or os.path.getsize(self.xmlTvFile) != os.path.getsize(tempFile):
+                if os.path.exists(self.xmlTvFile):
+                    os.unlink(self.xmlTvFile)
+                os.rename(tempFile, self.xmlTvFile)
 
     def getDataFromExternal(self, date, progress_callback = None):
         size = os.path.getsize(self.xmlTvFile)
