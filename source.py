@@ -807,6 +807,7 @@ class XMLTVWEBSource(Source):
             if downloadedPath.endswith('.gz'):
                 self.extract_file(downloadedPath)
                 xbmcvfs.copy(os.path.join(self.cachePath, "guide.xml"), self.extractedFile)
+                xbmcvfs.delete(os.path.join(self.cachePath, "guide.xml"))
             else:
                 xbmcvfs.copy(downloadedPath, self.extractedFile)
                 
@@ -821,6 +822,7 @@ class XMLTVWEBSource(Source):
                 xbmcvfs.copy(os.path.join(self.cachePath, "guide.xml"), self.extractedFile)
             else:
                 xbmcvfs.copy(downloadedPath, self.extractedFile)
+        xbmcvfs.delete(downloadedPath)
             
     def getDataFromExternal(self, date, progress_callback = None):
         size = os.path.getsize(self.xmlTvFile)
