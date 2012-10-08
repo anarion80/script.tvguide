@@ -1,4 +1,4 @@
-#
+# -*- coding: utf-8 -*-
 #      Copyright (C) 2012 Tommy Winther
 #      http://tommy.winther.nu
 #
@@ -16,7 +16,7 @@
 #  along with this Program; see the file LICENSE.txt.  If not, write to
 #  the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 #  http://www.gnu.org/copyleft/gpl.html
-#
+# -*- coding: utf-8 -*-
 import StringIO
 import os, sys
 import simplejson
@@ -641,9 +641,9 @@ class XMLTVSource(Source):
         super(XMLTVSource, self).__init__(addon, cachePath)
         self.logoFolder = addon.getSetting('xmltv.logo.folder')
         self.xmlTvFileLastChecked = datetime.datetime.fromtimestamp(0)
-        self.xmltvFile = addon.getSetting('xmltv.file')
+        self.xmlTvFile = addon.getSetting('xmltv.file')
 
-        if not self.xmltvFile or not xbmcvfs.exists(self.xmltvFile):
+        if not self.xmlTvFile or not xbmcvfs.exists(self.xmlTvFile):
             raise SourceNotConfiguredException()
 
         tempFile = os.path.join(self.cachePath, '%s.xmltv.tmp' % self.KEY)
@@ -697,7 +697,51 @@ class XMLTVWEBSource(Source):
 
     def __init__(self, addon, cachePath):
         
-        def extract_file(path):
+        xbmc.log('[script.tvguide] Entering Init', xbmc.LOGDEBUG)        
+        super(XMLTVWEBSource, self).__init__(addon, cachePath)
+        self.logoFolder = addon.getSetting('xmltv.logo.folder')
+        self.xmlTvFileLastChecked = datetime.datetime.fromtimestamp(0)
+        self.url = addon.getSetting('xmltv.url')
+        self.filetype = addon.getSetting('xmltv.type')
+        
+        if not addon.getSetting('xmltv.url'):
+            raise SourceNotConfiguredException()
+        
+        self.xmlTvFile = os.path.join(self.cachePath, '%s.xmltv' % self.KEY) 
+        self.extractedFile = os.path.join(self.cachePath, "downloaded.xml")   
+        tempFile = os.path.join(self.cachePath, '%s.xmltv.tmp' % self.KEY)
+        
+        
+        if (os.path.exists(self.extractedFile) and ((datetime.datetime.fromtimestamp(os.path.getmtime(self.extractedFile)) - datetime.datetime.now()).days > 1)) or not os.path.exists(self.extractedFile):
+        # if downloaded xmltv file is older than 1 day or is not present then download it
+            xbmc.log('[script.tvguide] Obtaining new XMLTV file from URL', xbmc.LOGDEBUG)
+            try:
+                xbmc.log('[script.tvguide] fetch file: ' + str(self.url) + str(self.filetype), xbmc.LOGDEBUG)
+                self.fetch_file(self.url,self.filetype)
+            except Exception as ex:
+                #xbmcgui.Dialog().ok(ADDON.getAddonInfo('name'), strings(HTML_FILE_ERROR_1), strings(HTML_FILE_ERROR_2))
+                raise SourceException('Exception! ' + str(ex))
+            
+            
+            xbmc.log('[script.tvguide] extracted file: ' + self.extractedFile, xbmc.LOGDEBUG)
+            if not os.path.exists(self.extractedFile):
+                raise SourceException('XML TV file does not exist!')
+                
+            xbmcvfs.copy(self.extractedFile, self.xmlTvFile)    
+            xbmc.log('[script.tvguide] Caching XMLTV file...')
+            xbmcvfs.copy(self.xmlTvFile, tempFile)
+                
+        if not os.path.exists(tempFile):
+            raise SourceException('XML TV file was not cached, does it exist?')
+
+        # if xmlTvFile doesn't exists or the file size is different from tempFile
+        # we copy the tempFile to xmlTvFile which in turn triggers a reload in self._isChannelListCacheExpired(..)
+        if not os.path.exists(self.xmlTvFile) or os.path.getsize(self.xmlTvFile) != os.path.getsize(tempFile):
+            if os.path.exists(self.xmlTvFile):
+                os.unlink(self.xmlTvFile)
+            os.rename(tempFile, self.xmlTvFile)
+
+    def extract_file(self, path):
             if path.endswith('.zip'):
                 opener, mode = zipfile.ZipFile, 'r'
             elif path.endswith('.tar.gz') or path.endswith('.tgz'):
@@ -720,77 +764,65 @@ class XMLTVWEBSource(Source):
                 raise SourceException('Exception! ' + str(ex))
             finally:
                 os.chdir(cwd)
-        
-        
-        
-        xbmc.log('[script.tvguide] Entering Init', xbmc.LOGDEBUG)        
-        super(XMLTVWEBSource, self).__init__(addon, cachePath)
-        self.logoFolder = addon.getSetting('xmltv.logo.folder')
-        self.xmlTvFileLastChecked = datetime.datetime.fromtimestamp(0)
-        self.HTMLURL = addon.getSetting('xmltv.url')
-
-        if not addon.getSetting('xmltv.url'):
-            raise SourceNotConfiguredException()
-        
-        self.xmlTvFile = os.path.join(self.cachePath, '%s.xmltv' % self.KEY) 
-        self.xmltvguide = os.path.join(self.cachePath, "guide.xml")   
-        tempFile = os.path.join(self.cachePath, '%s.xmltv.tmp' % self.KEY)
-        
-        
-        if (os.path.exists(self.xmltvguide) and ((datetime.datetime.fromtimestamp(os.path.getmtime(self.xmltvguide)) - datetime.datetime.now()).days > 1)) or not os.path.exists(self.xmltvguide):
-        # if downloaded xmltv file is older than 1 day or is not present then download it
-            
-            xbmc.log('[script.tvguide] Obtaining new XMLTV file from URL', xbmc.LOGDEBUG)
-            opener = urllib2.build_opener(urllib2.HTTPHandler(debuglevel=1))
-            opener.addheaders = [('User-agent', 'Mozilla/5.0')]
-            response = opener.open(self.HTMLURL)
-            myparser = MyHTMLParser(response)
-            xbmc.log('[script.tvguide] Parsing XMLTV location webpage...')
-            self.XMLTVURL = myparser.link
-            xbmc.log('[script.tvguide] XMLTV new URL:' + self.XMLTVURL, xbmc.LOGDEBUG)
-            self.downloadedTarName = self.XMLTVURL.split('/')[-1]
-            downloadedTarPath = os.path.join(self.cachePath, self.downloadedTarName)
-            
-            try:
-                r = urllib2.Request(self.XMLTVURL)
-                f = urllib2.urlopen(r)
-                xbmc.log('[script.tvguide] Downloading: ' + self.XMLTVURL, xbmc.LOGDEBUG)
-                xbmc.log('[script.tvguide] downloadedTarName: ' + self.downloadedTarName, xbmc.LOGDEBUG)
-                xbmc.log('[script.tvguide] downloadedTarPath: ' + downloadedTarPath, xbmc.LOGDEBUG)
-                local_file = open(downloadedTarPath, "wb")
-                xbmc.log('[script.tvguide] local_file: ' + str(local_file), xbmc.LOGDEBUG)
-                xbmc.log('[script.tvguide] Writing: ' + downloadedTarPath, xbmc.LOGDEBUG)
-                local_file.write(f.read())
-                local_file.close()    
-                f.close()
-
-            except urllib2.URLError, e:
-                raise SourceException('Failed to fetch file: ' + str(e))
-            except IOError as e:
-                raise SourceException("I/O error({0}): {1}" + str(e.errno) + str(e.strerror))
-            except Exception as ex:
-                raise SourceException('Problem downloading file!)' + str (ex))
-
-            extract_file(downloadedTarPath)
-            xbmc.log('[script.tvguide] xmltvfile: ' + self.xmltvguide, xbmc.LOGDEBUG)
-            if not os.path.exists(self.xmltvguide):
-                raise SourceException('XML TV file from TAR does not exist!')
-                
-            xbmcvfs.copy(self.xmltvguide, self.xmlTvFile)    
-            xbmc.log('[script.tvguide] Caching XMLTV file...')
-            xbmcvfs.copy(self.xmlTvFile, tempFile)
-
-        if not os.path.exists(tempFile):
-            raise SourceException('XML TV file was not cached, does it exist?')
-
-        # if xmlTvFile doesn't exists or the file size is different from tempFile
-        # we copy the tempFile to xmlTvFile which in turn triggers a reload in self._isChannelListCacheExpired(..)
-        if not os.path.exists(self.xmlTvFile) or os.path.getsize(self.xmlTvFile) != os.path.getsize(tempFile):
-            if os.path.exists(self.xmlTvFile):
-                os.unlink(self.xmlTvFile)
-            os.rename(tempFile, self.xmlTvFile)
-
     
+    def fetch_from_web(self, remote_path, local_path):
+        try:
+            r = urllib2.Request(remote_path)
+            f = urllib2.urlopen(r)
+            xbmc.log('[script.tvguide] Downloading: ' + remote_path, xbmc.LOGDEBUG)       
+            local_file = open(local_path, "wb")
+            xbmc.log('[script.tvguide] local_file: ' + str(local_file), xbmc.LOGDEBUG)
+            xbmc.log('[script.tvguide] Writing: ' + local_path, xbmc.LOGDEBUG)
+            local_file.write(f.read())
+            local_file.close()    
+            f.close()
+
+        except urllib2.URLError, e:
+            raise SourceException('Failed to fetch file: ' + str(e))
+        except IOError as e:
+            raise SourceException("I/O error({0}): {1}" + str(e.errno) + str(e.strerror))
+        except Exception as ex:
+            raise SourceException('Problem downloading file!)' + str (ex))
+        
+    def fetch_file(self, path, format="HTML"):
+        xbmc.log('[script.tvguide] path: ' + path, xbmc.LOGDEBUG)
+        xbmc.log('[script.tvguide] format: ' + format, xbmc.LOGDEBUG)
+        opener = urllib2.build_opener(urllib2.HTTPHandler(debuglevel=1))
+        opener.addheaders = [('User-agent', 'Mozilla/5.0')]
+        response = opener.open(path)
+        if format=="HTML":
+            myparser = MyHTMLParser(response)
+            if not myparser:
+                xbmcgui.Dialog().ok(ADDON.getAddonInfo('name'), "Nie uda³o siê sparsowaæ pliku")
+                return
+            xbmc.log('[script.tvguide] Parsing XMLTV location webpage...')
+            xbmc.log('[script.tvguide] Extracted URL:' + myparser.link, xbmc.LOGDEBUG)
+            downloadedFile = myparser.link.split('/')[-1]
+            xbmc.log('[script.tvguide] downloadedFile: ' + downloadedFile, xbmc.LOGDEBUG)
+            downloadedPath = os.path.join(self.cachePath, downloadedFile)
+            xbmc.log('[script.tvguide] downloadedPath: ' + downloadedPath, xbmc.LOGDEBUG)
+        
+            self.fetch_from_web(myparser.link,downloadedPath)
+
+            if downloadedPath.endswith('.gz'):
+                self.extract_file(downloadedPath)
+                xbmcvfs.copy(os.path.join(self.cachePath, "guide.xml"), self.extractedFile)
+                xbmcvfs.delete(os.path.join(self.cachePath, "guide.xml"))
+            else:
+                xbmcvfs.copy(downloadedPath, self.extractedFile)
+                
+        else:
+            downloadedFile = path.split('/')[-1]
+            xbmc.log('[script.tvguide] downloadedFile: ' + downloadedFile, xbmc.LOGDEBUG)
+            downloadedPath = os.path.join(self.cachePath, downloadedFile)
+            xbmc.log('[script.tvguide] downloadedPath: ' + downloadedPath, xbmc.LOGDEBUG)
+            self.fetch_from_web(path,downloadedPath)
+            if format=="TARGZ":
+                self.extract_file(downloadedPath)
+                xbmcvfs.copy(os.path.join(self.cachePath, "guide.xml"), self.extractedFile)
+            else:
+                xbmcvfs.copy(downloadedPath, self.extractedFile)
+        xbmcvfs.delete(downloadedPath)
             
     def getDataFromExternal(self, date, progress_callback = None):
         size = os.path.getsize(self.xmlTvFile)
@@ -958,15 +990,9 @@ def parseXMLTV(context, f, size, logoFolder, progress_callback):
                 if not description:
                     description = strings(NO_DESCRIPTION)
                 title = elem.findtext('title')
-<<<<<<< HEAD
                 subtitle = elem.findtext('sub-title')
                 if subtitle:
                      title += ": " + elem.findtext('sub-title')
-=======
-		subtitle = elem.findtext('sub-title')
-		if subtitle:
-			title += ": " + elem.findtext('sub-title')
->>>>>>> 65ba07ab2a7033c3d9a636ad4c0168a09c79b65c
                 result = Program(channel, title, parseXMLTVDate(elem.get('start')), parseXMLTVDate(elem.get('stop')), description, imageSmall=icon)
 
             elif elem.tag == "channel":

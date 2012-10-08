@@ -85,6 +85,10 @@
     <string id="30803">addon which is not installed.</string>
     <string id="30804">Streaming using that addon is now disabled.</string>
 	
+	<string id="30810">Could not open file</string>
+	<string id="30811">Try to enter correct HTML file URL in settings</string>
+	
 	<string id="30900">XMLTV file URL address</string>	
+	<string id="30901">File type</string>
 </strings>
 

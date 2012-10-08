@@ -73,6 +73,10 @@
     <string id="30803">który nie jest zainstalowany.</string>
     <string id="30804">Odtwarzanie za pomocą tego dodatku zostało wyłączone.</string>
 	
+	<string id="30810">Nie udało się otworzyć pliku</string>
+	<string id="30811">Spróbuj ponownie podać adres URL pliku w ustawieniach</string>
+		
 	<string id="30900">Adres URL pliku XMLTV</string>
+	<string id="30901">Typ pliku</string>
 </strings>
 
