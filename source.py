@@ -712,7 +712,7 @@ class XMLTVWEBSource(Source):
         tempFile = os.path.join(self.cachePath, '%s.xmltv.tmp' % self.KEY)
         
         
-        if (os.path.exists(self.extractedFile) and ((datetime.datetime.fromtimestamp(os.path.getmtime(self.extractedFile)) - datetime.datetime.now()).days > 1)) or not os.path.exists(self.extractedFile):
+        if (os.path.exists(self.extractedFile) and ((datetime.datetime.now() - datetime.datetime.fromtimestamp(os.path.getmtime(self.extractedFile))).days > 1)) or not os.path.exists(self.extractedFile):
         # if downloaded xmltv file is older than 1 day or is not present then download it
             xbmc.log('[script.tvguide] Obtaining new XMLTV file from URL', xbmc.LOGDEBUG)
             try:
