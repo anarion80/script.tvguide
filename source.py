@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 #
 #      Copyright (C) 2013 Tommy Winther
 #      http://tommy.winther.nu
@@ -824,10 +825,10 @@ class XMLTVSource(Source):
 
     def __init__(self, addon):
         self.logoFolder = addon.getSetting('xmltv.logo.folder')
-        self.xmlTvFileLastChecked = datetime.datetime.fromtimestamp(0)
-        self.xmlTvFile = addon.getSetting('xmltv.file')
+        self.xmltvFileLastChecked = datetime.datetime.fromtimestamp(0)
+        self.xmltvFile = addon.getSetting('xmltv.file')
 
-        if not self.xmlTvFile or not xbmcvfs.exists(self.xmlTvFile):
+        if not self.xmltvFile or not xbmcvfs.exists(self.xmltvFile):
             raise SourceNotConfiguredException()
 
     def getDataFromExternal(self, date, progress_callback = None):
@@ -849,19 +850,23 @@ class XMLTVSource(Source):
 class XMLTVWEBSource(Source):
     KEY = 'xmltv-url'
 
-    def __init__(self, addon, cachePath):
+    def __init__(self, addon):
         
         xbmc.log('[script.tvguide] Entering Init', xbmc.LOGDEBUG)        
-        super(XMLTVWEBSource, self).__init__(addon, cachePath)
         self.logoFolder = addon.getSetting('xmltv.logo.folder')
-        self.xmlTvFileLastChecked = datetime.datetime.fromtimestamp(0)
+        self.xmltvFileLastChecked = datetime.datetime.fromtimestamp(0)
         self.url = addon.getSetting('xmltv.url')
         self.filetype = addon.getSetting('xmltv.type')
         
         if not addon.getSetting('xmltv.url'):
             raise SourceNotConfiguredException()
         
-        self.xmlTvFile = os.path.join(self.cachePath, '%s.xmltv' % self.KEY) 
+        self.cachePath = xbmc.translatePath(ADDON.getAddonInfo('profile'))
+
+        if not os.path.exists(self.cachePath):
+            os.makedirs(self.cachePath)
+            
+        self.xmltvFile = os.path.join(self.cachePath, '%s.xmltv' % self.KEY) 
         self.extractedFile = os.path.join(self.cachePath, "downloaded.xml")   
         tempFile = os.path.join(self.cachePath, '%s.xmltv.tmp' % self.KEY)
         
@@ -881,19 +886,19 @@ class XMLTVWEBSource(Source):
             if not os.path.exists(self.extractedFile):
                 raise SourceException('XML TV file does not exist!')
                 
-            xbmcvfs.copy(self.extractedFile, self.xmlTvFile)    
+            xbmcvfs.copy(self.extractedFile, self.xmltvFile)    
             xbmc.log('[script.tvguide] Caching XMLTV file...')
-            xbmcvfs.copy(self.xmlTvFile, tempFile)
+            xbmcvfs.copy(self.xmltvFile, tempFile)
                 
         if not os.path.exists(tempFile):
             raise SourceException('XML TV file was not cached, does it exist?')
 
-        # if xmlTvFile doesn't exists or the file size is different from tempFile
-        # we copy the tempFile to xmlTvFile which in turn triggers a reload in self._isChannelListCacheExpired(..)
-        if not os.path.exists(self.xmlTvFile) or os.path.getsize(self.xmlTvFile) != os.path.getsize(tempFile):
-            if os.path.exists(self.xmlTvFile):
-                os.unlink(self.xmlTvFile)
-            os.rename(tempFile, self.xmlTvFile)
+        # if xmltvFile doesn't exists or the file size is different from tempFile
+        # we copy the tempFile to xmltvFile which in turn triggers a reload in self._isChannelListCacheExpired(..)
+        if not os.path.exists(self.xmltvFile) or os.path.getsize(self.xmltvFile) != os.path.getsize(tempFile):
+            if os.path.exists(self.xmltvFile):
+                os.unlink(self.xmltvFile)
+            os.rename(tempFile, self.xmltvFile)
 
     def extract_file(self, path):
             if path.endswith('.zip'):
