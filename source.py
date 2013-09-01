@@ -966,7 +966,7 @@ class XMLTVWEBSource(Source):
         if format=="HTML":
             myparser = MyHTMLParser(response)
             if not myparser:
-                xbmcgui.Dialog().ok(ADDON.getAddonInfo('name'), "Nie uda³o siê sparsowaæ pliku")
+                xbmcgui.Dialog().ok(ADDON.getAddonInfo('name'), "Nie udalo sie sparsowac pliku")
                 return
             xbmc.log('[script.tvguide] Parsing XMLTV location webpage...')
             xbmc.log('[script.tvguide] Extracted URL:' + myparser.link, xbmc.LOGDEBUG)
@@ -1002,7 +1002,9 @@ class XMLTVWEBSource(Source):
         context = ElementTree.iterparse(f, events=("start", "end"))
         return parseXMLTV(context, f, f.size, self.logoFolder, progress_callback)
 
-    def isUpdated(self, lastUpdated):
+    def isUpdated(self, channelsLastUpdated, lastUpdated):
+        if channelsLastUpdated is None or not xbmcvfs.exists(self.xmltvFile):
+            return True
         if hasattr(xbmcvfs, 'Stat'):
             stat = xbmcvfs.Stat(self.xmltvFile)
             mtime = stat.st_mtime()
@@ -1010,9 +1012,8 @@ class XMLTVWEBSource(Source):
             mode, ino, dev, nlink, uid, gid, size, atime, mtime, ctime = os.stat(self.xmltvFile)
 
         fileUpdated = datetime.datetime.fromtimestamp(mtime)
-        return fileUpdated > lastUpdated
-        
-        
+        return fileUpdated > channelsLastUpdated
+                
 class ONTVSource(Source):
     KEY = 'ontv'
 
