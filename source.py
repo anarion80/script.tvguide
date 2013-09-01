@@ -41,6 +41,7 @@ import tarfile
 import zipfile
 
 import sqlite3
+import re
 
 SETTINGS_TO_CHECK = ['source', 'youseetv.category', 'xmltv.file', 'xmltv.logo.folder', 'ontv.url', 'xmltv.url']
 
@@ -966,7 +967,7 @@ class XMLTVWEBSource(Source):
         if format=="HTML":
             myparser = MyHTMLParser(response)
             if not myparser:
-                xbmcgui.Dialog().ok(ADDON.getAddonInfo('name'), "Nie udalo sie sparsowac pliku")
+                xbmcgui.Dialog().ok(ADDON.getAddonInfo('name'), "Nie udało się sparsować pliku")
                 return
             xbmc.log('[script.tvguide] Parsing XMLTV location webpage...')
             xbmc.log('[script.tvguide] Extracted URL:' + myparser.link, xbmc.LOGDEBUG)
@@ -1053,7 +1054,8 @@ def parseXMLTV(context, f, size, logoFolder, progress_callback):
                     icon = iconElement.get("src")
                 if not description:
                     description = strings(NO_DESCRIPTION)
-                title = elem.findtext('title')
+                title = elem.findtext('title')                
+                title = re.sub(r"\(\?\)$", "", title) #workaround for webgrab issue with (?) at the end
                 subtitle = elem.findtext('sub-title')
                 if subtitle:
                      title += ": " + elem.findtext('sub-title')
