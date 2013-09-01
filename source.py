@@ -63,6 +63,7 @@ class Channel(object):
         return 'Channel(id=%s, title=%s, logo=%s, streamUrl=%s)' \
                % (self.id, self.title, self.logo, self.streamUrl)
 
+
 class Program(object):
     def __init__(self, channel, title, startDate, endDate, description, imageLarge = None, imageSmall=None, notificationScheduled = None):
         """
@@ -89,14 +90,18 @@ class Program(object):
         return 'Program(channel=%s, title=%s, startDate=%s, endDate=%s, description=%s, imageLarge=%s, imageSmall=%s)' % \
             (self.channel, self.title, self.startDate, self.endDate, self.description, self.imageLarge, self.imageSmall)
 
+
 class SourceException(Exception):
     pass
+
 
 class SourceUpdateCanceledException(SourceException):
     pass
 
+
 class SourceNotConfiguredException(SourceException):
     pass
+
 
 class DatabaseSchemaException(sqlite3.DatabaseError):
     pass
@@ -117,6 +122,7 @@ class MyHTMLParser(HTMLParser):
     def get_fileids(self):
         return self.link
 
+
 class Database(object):
     SOURCE_DB = 'source.db'
     CHANNELS_PER_PAGE = 9
@@ -131,7 +137,7 @@ class Database(object):
 
         self.updateInProgress = False
         self.updateFailed = False
-        self.sourceNotConfigured = False
+        self.settingsChanged = None
 
         #buggalo.addExtraData('source', self.source.KEY)
         #for key in SETTINGS_TO_CHECK:
@@ -144,7 +150,7 @@ class Database(object):
             os.makedirs(profilePath)
         self.databasePath = os.path.join(profilePath, Database.SOURCE_DB)
 
-        threading.Thread(name = 'Database Event Loop', target = self.eventLoop).start()
+        threading.Thread(name='Database Event Loop', target=self.eventLoop).start()
 
     def eventLoop(self):
         print 'Database.eventLoop() >>>>>>>>>> starting...'
@@ -164,7 +170,10 @@ class Database(object):
                 self.eventResults[command.__name__] = result
 
                 if callback:
-                    threading.Thread(name = 'Database callback', target = callback).start()
+                    if self._initialize == command:
+                        threading.Thread(name='Database callback', target=callback, args=[result]).start()
+                    else:
+                        threading.Thread(name='Database callback', target=callback).start()
 
                 if self._close == command:
                     del self.eventQueue[:]
@@ -190,7 +199,7 @@ class Database(object):
         del self.eventResults[method.__name__]
         return result
 
-    def initialize(self, callback, cancel_requested_callback):
+    def initialize(self, callback, cancel_requested_callback=None):
         self.eventQueue.append([self._initialize, callback, cancel_requested_callback])
         self.event.set()
 
@@ -198,7 +207,7 @@ class Database(object):
         sqlite3.register_adapter(datetime.datetime, self.adapt_datetime)
         sqlite3.register_converter('timestamp', self.convert_datetime)
 
-        self.sourceNotConfigured = False
+        self.alreadyTriedUnlinking = False
         while True:
             if cancel_requested_callback is not None and cancel_requested_callback():
                 break
@@ -222,32 +231,38 @@ class Database(object):
                 if cancel_requested_callback is None:
                     xbmc.log('[script.tvguide] Database is locked, bailing out...', xbmc.LOGDEBUG)
                     break
-                else: # ignore 'database is locked'
+                else:  # ignore 'database is locked'
                     xbmc.log('[script.tvguide] Database is locked, retrying...', xbmc.LOGDEBUG)
 
             except sqlite3.DatabaseError:
                 self.conn = None
-                try:
-                    os.unlink(self.databasePath)
-                except OSError:
-                    pass
-                xbmcgui.Dialog().ok(ADDON.getAddonInfo('name'), strings(DATABASE_SCHEMA_ERROR_1),
-                    strings(DATABASE_SCHEMA_ERROR_2), strings(DATABASE_SCHEMA_ERROR_3))
+                if self.alreadyTriedUnlinking:
+                    xbmc.log('[script.tvguide] Database is broken and unlink() failed', xbmc.LOGDEBUG)
+                    break
+                else:
+                    try:
+                        os.unlink(self.databasePath)
+                    except OSError:
+                        pass
+                    self.alreadyTriedUnlinking = True
+                    xbmcgui.Dialog().ok(ADDON.getAddonInfo('name'), strings(DATABASE_SCHEMA_ERROR_1),
+                                        strings(DATABASE_SCHEMA_ERROR_2), strings(DATABASE_SCHEMA_ERROR_3))
 
-        if self.conn is None:
-            self.sourceNotConfigured = True
+        return self.conn is not None
 
-    def close(self, callback):
+    def close(self, callback=None):
         self.eventQueue.append([self._close, callback])
         self.event.set()
 
     def _close(self):
         try:
             # rollback any non-commit'ed changes to avoid database lock
-            self.conn.rollback()
+            if self.conn:
+                self.conn.rollback()
         except sqlite3.OperationalError:
-            pass # no transaction is active
-        self.conn.close()
+            pass  # no transaction is active
+        if self.conn:
+            self.conn.close()
 
     def _wasSettingsChanged(self, addon):
         settingsChanged = False
@@ -279,7 +294,6 @@ class Database(object):
         print 'Settings changed: ' + str(settingsChanged)
         return settingsChanged
 
-
     def _isCacheExpired(self, date):
         if self.settingsChanged:
             return True
@@ -291,12 +305,8 @@ class Database(object):
             row = c.fetchone()
             if not row:
                 return True
-            lastUpdated = row['channels_updated']
+            channelsLastUpdated = row['channels_updated']
             c.close()
-
-            today = datetime.datetime.now()
-            if lastUpdated is None or lastUpdated.day != today.day:
-                return True
         except TypeError:
             return True
 
@@ -305,16 +315,13 @@ class Database(object):
         c = self.conn.cursor()
         c.execute('SELECT programs_updated FROM updates WHERE source=? AND date=?', [self.source.KEY, dateStr])
         row = c.fetchone()
-        today = datetime.datetime.now()
-        expired = row is None or row['programs_updated'] is None or row['programs_updated'].day != today.day
+        if row:
+            programsLastUpdated = row['programs_updated']
+        else:
+            programsLastUpdated = datetime.datetime.fromtimestamp(0)
         c.close()
 
-        if not self.source.isUpdated(date):
-            # no reason to update if source has not been modified
-            return False
-
-        return expired
-
+        return self.source.isUpdated(channelsLastUpdated, programsLastUpdated)
 
     def updateChannelAndProgramListCaches(self, callback, date = datetime.datetime.now(), progress_callback = None, clearExistingProgramList = True):
         self.eventQueue.append([self._updateChannelAndProgramListCaches, callback, date, progress_callback, clearExistingProgramList])
@@ -344,9 +351,9 @@ class Database(object):
             self.settingsChanged = False # only want to update once due to changed settings
 
             if clearExistingProgramList:
-                c.execute("DELETE FROM updates WHERE source=?", [self.source.KEY]) # cascades and deletes associated programs records
+                c.execute("DELETE FROM updates WHERE source=?", [self.source.KEY])  # cascades and deletes associated programs records
             else:
-                c.execute("DELETE FROM updates WHERE source=? AND date=?", [self.source.KEY, dateStr]) # cascades and deletes associated programs records
+                c.execute("DELETE FROM updates WHERE source=? AND date=?", [self.source.KEY, dateStr])  # cascades and deletes associated programs records
 
             # programs updated
             c.execute("INSERT INTO updates(source, date, programs_updated) VALUES(?, ?, ?)", [self.source.KEY, dateStr, datetime.datetime.now()])
@@ -394,8 +401,8 @@ class Database(object):
         except Exception:
             import traceback as tb
             import sys
-            (type, value, traceback) = sys.exc_info()
-            tb.print_exception(type, value, traceback)
+            (etype, value, traceback) = sys.exc_info()
+            tb.print_exception(etype, value, traceback)
 
             try:
                 self.conn.rollback()
@@ -421,7 +428,6 @@ class Database(object):
             raise SourceException('No channels or programs imported')
 
         return result
-
 
     def _getEPGView(self, channelStart, date, progress_callback, clearExistingProgramList):
         self._updateChannelAndProgramListCaches(date, progress_callback, clearExistingProgramList)
@@ -558,14 +564,17 @@ class Database(object):
 
         channelMap = dict()
         for c in channels:
-            channelMap[c.id] = c
+            if c.id:
+                channelMap[c.id] = c
+
+        if not channels:
+            return []
 
         c = self.conn.cursor()
         c.execute('SELECT p.*, (SELECT 1 FROM notifications n WHERE n.channel=p.channel AND n.program_title=p.title AND n.source=p.source) AS notification_scheduled FROM programs p WHERE p.channel IN (\'' + ('\',\''.join(channelMap.keys())) + '\') AND p.source=? AND p.end_date > ? AND p.start_date < ?', [self.source.KEY, startTime, endTime])
         for row in c:
             program = Program(channelMap[row['channel']], row['title'], row['start_date'], row['end_date'], row['description'], row['image_large'], row['image_small'], row['notification_scheduled'])
             programList.append(program)
-
 
         return programList
 
@@ -580,17 +589,18 @@ class Database(object):
         c.close()
         return expired
 
-
-    def setCustomStreamUrl(self, callback, channel, stream_url):
-        self.eventQueue.append([self._setCustomStreamUrl, callback, channel, stream_url])
-        self.event.set()
+    def setCustomStreamUrl(self, channel, stream_url):
+        if stream_url is not None:
+            self._invokeAndBlockForResult(self._setCustomStreamUrl, channel, stream_url)
+        # no result, but block until operation is done
 
     def _setCustomStreamUrl(self, channel, stream_url):
-        c = self.conn.cursor()
-        c.execute("DELETE FROM custom_stream_url WHERE channel=?", [channel.id])
-        c.execute("INSERT INTO custom_stream_url(channel, stream_url) VALUES(?, ?)", [channel.id, stream_url.decode('utf-8', 'ignore')])
-        self.conn.commit()
-        c.close()
+        if stream_url is not None:
+            c = self.conn.cursor()
+            c.execute("DELETE FROM custom_stream_url WHERE channel=?", [channel.id])
+            c.execute("INSERT INTO custom_stream_url(channel, stream_url) VALUES(?, ?)", [channel.id, stream_url.decode('utf-8', 'ignore')])
+            self.conn.commit()
+            c.close()
 
     def getCustomStreamUrl(self, channel):
         return self._invokeAndBlockForResult(self._getCustomStreamUrl, channel)
@@ -768,8 +778,14 @@ class Source(object):
         """
         return None
 
-    def isUpdated(self, lastUpdated):
-        return True
+    def isUpdated(self, channelsLastUpdated, programsLastUpdated):
+        today = datetime.datetime.now()
+        if channelsLastUpdated is None or channelsLastUpdated.day != today.day:
+            return True
+
+        if programsLastUpdated is None or programsLastUpdated.day != today.day:
+            return True
+        return False
 
     def _downloadUrl(self, url):
         u = urllib2.urlopen(url, timeout=30)
@@ -836,15 +852,13 @@ class XMLTVSource(Source):
         context = ElementTree.iterparse(f, events=("start", "end"))
         return parseXMLTV(context, f, f.size, self.logoFolder, progress_callback)
 
-    def isUpdated(self, lastUpdated):
-        if hasattr(xbmcvfs, 'Stat'):
-            stat = xbmcvfs.Stat(self.xmltvFile)
-            mtime = stat.st_mtime()
-        else:
-            mode, ino, dev, nlink, uid, gid, size, atime, mtime, ctime = os.stat(self.xmltvFile)
+    def isUpdated(self, channelsLastUpdated, programLastUpdate):
+        if channelsLastUpdated is None or not xbmcvfs.exists(self.xmltvFile):
+            return True
 
-        fileUpdated = datetime.datetime.fromtimestamp(mtime)
-        return fileUpdated > lastUpdated
+        stat = xbmcvfs.Stat(self.xmltvFile)
+        fileUpdated = datetime.datetime.fromtimestamp(stat.st_mtime())
+        return fileUpdated > channelsLastUpdated
 
 
 class XMLTVWEBSource(Source):
@@ -1049,7 +1063,7 @@ def parseXMLTV(context, f, size, logoFolder, progress_callback):
                 title = elem.findtext("display-name")
                 logo = None
                 if logoFolder:
-                    logoFile = os.path.join(logoFolder.encode('utf-8', 'ignore'), title.encode('utf-8', 'ignore') + '.png')
+                    logoFile = os.path.join(logoFolder, title + '.png')
                     if xbmcvfs.exists(logoFile):
                         logo = logoFile
                 if not logo:
@@ -1068,19 +1082,11 @@ def parseXMLTV(context, f, size, logoFolder, progress_callback):
         root.clear()
     f.close()
 
+
 class FileWrapper(object):
     def __init__(self, filename):
-        if hasattr(xbmcvfs, 'File'):
-            #xbmcvfs.File() was added in Frodo
-            self.vfsfile = xbmcvfs.File(filename)
-            self.size = self.vfsfile.size()
-        else:
-            print "xbmcvfs.File() is missing - perhaps you are running XBMC Eden? - retrying with python file opener"
-            try:
-                self.vfsfile = open(filename)
-            except IOError:
-                xbmcgui.Dialog().ok(strings(LOAD_ERROR_TITLE), 'smb://, nfs://, etc. is not support in Eden', 'Mount these on a system level instead. Filename:', filename)
-            self.size = os.path.getsize(filename)
+        self.vfsfile = xbmcvfs.File(filename)
+        self.size = self.vfsfile.size()
         self.bytesRead = 0
 
     def close(self):
@@ -1092,6 +1098,7 @@ class FileWrapper(object):
 
     def tell(self):
         return self.bytesRead
+
 
 def instantiateSource():
     SOURCES = {
